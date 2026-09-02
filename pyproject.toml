@@ -1,0 +1,23 @@
+[project]
+name = "activeva-real-robot"
+version = "0.1.0"
+description = "ActiveVA 真机部署框架：cambot + 2x Unitree D1 遥操作、lerobot 采集、推理闭环"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pyyaml",
+    "pyzmq",
+    "ikpy",
+]
+
+[project.optional-dependencies]
+collect = ["lerobot"]
+# TODO(现场): 按相机方案添加 pyrealsense2 / pyzed
+camera = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["common", "robot", "server"]

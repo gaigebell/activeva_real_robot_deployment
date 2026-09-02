@@ -1,0 +1,37 @@
+# 机器人端配置（现场修改，与 common/contract.py 保持同步）
+robot:
+  # D1 双臂：每臂一个 d1_bridge 实例；topic/网卡按多臂方案现场定（docs/protocol_d1.md）
+  left:
+    bridge_host: 127.0.0.1
+    bridge_port: 5500
+    dds_topic: "rt/arm_Command"            # 方案二时改 "rt/arm_Command_1"
+    feedback_topic: "current_servo_angle"  # 方案二时改 "current_servo_angle_1"
+    dds_interface: ""                      # 方案一时填网卡名，如 "eth0"
+    address: 1
+  right:
+    bridge_host: 127.0.0.1
+    bridge_port: 5501
+    dds_topic: "rt/arm_Command_1"          # TODO(现场)
+    feedback_topic: "current_servo_angle_1"
+    dds_interface: ""
+    address: 1
+  cambot:
+    ws_url: "wss://127.0.0.1:8080/ws?no_video=1"   # cambot control-only 接口
+    forward_host: 127.0.0.1
+    forward_port: 6001                            # cambot_patch 手柄转发端口
+
+camera:
+  backend: "dummy"      # "realsense" | "zed" | "dummy"   TODO(现场): NQ2
+  width: 1280
+  height: 720
+  fps: 30
+  with_depth: false     # TODO(现场): 深度是否采集
+
+collection:
+  fps: 30               # QD3 默认 30
+  repo_id: "activeva_real"
+  root: "outputs"
+
+server:
+  host: "127.0.0.1"     # TODO(现场): 服务器端 IP
+  port: 6000
