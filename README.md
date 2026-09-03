@@ -2,7 +2,15 @@
 
 cambot（主动视觉臂）+ 2× Unitree D1（双操作臂）+ Quest3 VR 遥操作 + lerobot 数据采集 + 服务器端推理闭环。
 
-计划、调研结论与决策记录见 [PLAN.md](PLAN.md)；D1 官方协议见 [docs/protocol_d1.md](docs/protocol_d1.md)。
+计划、调研结论与决策记录见 [PLAN.md](PLAN.md)；D1 官方协议见 [docs/protocol_d1.md](docs/protocol_d1.md)；
+当前已验证的双网卡直连方案和排障步骤见 [docs/d1_dual_arm_network.md](docs/d1_dual_arm_network.md)。
+Quest 3 手柄分层联调与双臂遥操步骤见 [docs/quest_d1_teleop.md](docs/quest_d1_teleop.md)。
+当前 Quest 位姿到 D1 关节指令的完整公式、代码索引和已知疑点见
+[docs/vr_d1_kinematics_calculation_chain.md](docs/vr_d1_kinematics_calculation_chain.md)。
+本轮确认的 Home 对齐、初始工作区与夹爪/坐标/TCP 标定方案见
+[docs/d1_teleop_design_and_calibration.md](docs/d1_teleop_design_and_calibration.md)。
+完成分层验证后，可用 `./scripts/start_full_vr_teleop.sh --yes --camera-backend realsense`
+一键运行完整双臂 6DoF 遥操。
 
 ## 目录结构
 
@@ -32,12 +40,21 @@ uv sync
 
 # 2. 构建安装 unitree_sdk2（详见其 README：apt 依赖 + cmake + make + sudo make install）
 
-# 3. 构建 d1_bridge
-cd robot/d1_bridge && mkdir -p build && cd build
-cmake .. -DD1_SDK_DIR=../../d1_sdk && make
+# 3. 重启后初始化 D1 双网卡（已连线时）
+sudo ./scripts/setup_d1_network.sh
 
-# 4. 启动（先确认 robot/config.yaml 与现场一致）
-./scripts/start_robot.sh teleop
+# 4. 构建 d1_bridge
+cd robot/d1_bridge && mkdir -p build && cd build
+cmake .. -DD1_SDK_DIR=/home/ubuntu/unitree_ws/d1_sdk && make
+
+# 5. 不接 cambot/Quest，先按 supervisor 建议只读验证单臂反馈
+cd ../../..
+sudo ./scripts/setup_d1_network.sh --arm left
+./scripts/test_dual_d1.sh status --arm left --watch --seconds 5
+
+# 6. 按 docs/d1_dual_arm_network.md 做独立上电/使能/微动测试。
+# 7. 双臂独立测试全部通过后，再启动 Quest 3 遥操。
+./scripts/start_robot.sh teleop --arm left
 ```
 
 服务器端（独立机器，RTX 5880 Ada）：
@@ -48,7 +65,7 @@ uv sync && ./scripts/start_server.sh
 
 ## 现场检查清单（TODO 汇总）
 
-- [ ] D1 网络：ping 192.168.123.100；双臂区分方案定（网卡绑定 or 改 topic，docs/protocol_d1.md）
+- [x] D1 网络：D1_A `.100`/`enp5s0` + D1_B `.99`/`enx00e04c681b82`，相同 topic 按网卡隔离
 - [ ] D1 上电(6) → 使能(5) → 反馈 7 值连续无 NaN → 归零(7)
 - [ ] 相机方案（NQ2：D435/ZED、分辨率、深度）→ `robot/config.yaml` + `robot/camera.py`
 - [ ] 夹爪语义（NQ5：angle6 单位/范围）→ `common/contract.py`

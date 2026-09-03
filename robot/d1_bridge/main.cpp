@@ -47,13 +47,13 @@ void on_feedback(const void* msg) {
     const auto* fb = static_cast<const PubServoInfo_*>(msg);
     std::lock_guard<std::mutex> lk(g_fb_mutex);
     // TODO(现场): 核对字段名（servo0_data()~servo6_data()）
-    g_angles[0] = fb->servo0_data();
-    g_angles[1] = fb->servo1_data();
-    g_angles[2] = fb->servo2_data();
-    g_angles[3] = fb->servo3_data();
-    g_angles[4] = fb->servo4_data();
-    g_angles[5] = fb->servo5_data();
-    g_angles[6] = fb->servo6_data();
+    g_angles[0] = fb->servo0_data_();
+    g_angles[1] = fb->servo1_data_();
+    g_angles[2] = fb->servo2_data_();
+    g_angles[3] = fb->servo3_data_();
+    g_angles[4] = fb->servo4_data_();
+    g_angles[5] = fb->servo5_data_();
+    g_angles[6] = fb->servo6_data_();
     g_has_feedback = true;
 }
 
@@ -228,8 +228,9 @@ int main(int argc, char** argv) {
         return 1;
     }
     listen(listen_fd, 4);
-    printf("[d1_bridge] topic=%s feedback=%s, 监听 TCP :%d, address=%d\n",
-           topic.c_str(), feedback_topic.c_str(), port, address);
+    printf("[d1_bridge] interface=%s topic=%s feedback=%s, 监听 TCP :%d, address=%d\n",
+           interface.empty() ? "<auto>" : interface.c_str(), topic.c_str(),
+           feedback_topic.c_str(), port, address);
 
     std::thread(feedback_broadcast_loop).detach();
 

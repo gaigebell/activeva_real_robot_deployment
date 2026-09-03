@@ -1,24 +1,104 @@
 # 机器人端配置（现场修改，与 common/contract.py 保持同步）
 robot:
-  # D1 双臂：每臂一个 d1_bridge 实例；topic/网卡按多臂方案现场定（docs/protocol_d1.md）
+  # 已验证的临时接线：两臂使用相同官方 topic，由独立网卡隔离 DDS。
+  # 详见 docs/d1_dual_arm_network.md。
   left:
     bridge_host: 127.0.0.1
     bridge_port: 5500
-    dds_topic: "rt/arm_Command"            # 方案二时改 "rt/arm_Command_1"
-    feedback_topic: "current_servo_angle"  # 方案二时改 "current_servo_angle_1"
-    dds_interface: ""                      # 方案一时填网卡名，如 "eth0"
+    robot_ip: "192.168.123.100"
+    host_ip: "192.168.123.97"
+    dds_topic: "rt/arm_Command"
+    feedback_topic: "current_servo_angle"
+    dds_interface: "enp5s0"
     address: 1
   right:
     bridge_host: 127.0.0.1
     bridge_port: 5501
-    dds_topic: "rt/arm_Command_1"          # TODO(现场)
-    feedback_topic: "current_servo_angle_1"
-    dds_interface: ""
+    robot_ip: "192.168.123.99"
+    host_ip: "192.168.123.98"
+    dds_topic: "rt/arm_Command"
+    feedback_topic: "current_servo_angle"
+    dds_interface: "enx00e04c681b82"
     address: 1
   cambot:
     ws_url: "wss://127.0.0.1:8080/ws?no_video=1"   # cambot control-only 接口
     forward_host: 127.0.0.1
     forward_port: 6001                            # cambot_patch 手柄转发端口
+
+teleop:
+  # 侧握键（squeeze）是死手开关：按下沿对齐当前臂位姿，持续按住才下发。
+  deadman_threshold: 0.5
+  controller_timeout_s: 0.25
+  # 250ms 后立即停发，但短暂断流恢复时自动重新对齐；超过 3s 才锁止并要求松键。
+  controller_rearm_timeout_s: 3.0
+  # Home 模式仍在 250ms 时立即停发；3 秒内恢复时以当前状态自动重对齐。
+  home_rearm_timeout_s: 3.0
+  control_fps: 10
+  position_scale: 1.20
+  max_position_delta_m: 0.35
+  max_joint_step_deg: 30.0
+  max_joint_delta_from_engage_deg: 90.0
+  max_gripper_step: 20.0
+  # position/orientation 标定使用局部阻尼 IK；遇到奇异位形宁可少动/不动，
+  # 也不允许跳到另一组关节解。它不包含自碰撞检测。
+  calibration_position_step_m: 0.005
+  calibration_max_position_delta_m: 0.05
+  calibration_orientation_step_deg: 3.0
+  calibration_ik_damping: 0.05
+  calibration_orientation_weight: 0.5
+  # full 6DoF 也使用同一连续 IK，只允许每个 10Hz 周期追踪一小段末端误差。
+  # 这两个值决定跟随速度，不是手柄总工作范围。
+  teleop_position_step_m: 0.008
+  teleop_orientation_step_deg: 4.0
+  teleop_max_joint_step_deg: 6.0
+  # 日志首个 Home 的条件数约 387，侧向运动不可控；弯曲后的姿态约 19。
+  # 接合前自动拒绝高于此阈值的 Home/起始姿态。
+  max_ik_condition_number: 80.0
+  calibration_max_joint_step_deg: 5.0
+  calibration_max_joint_delta_from_engage_deg: 30.0
+  # 连续 IK 以最后下发目标积分，但目标最多领先实际反馈 6°，防止 D1 内部
+  # 平滑/低频反馈把多个小步积累成一次猝然动作。
+  max_command_lead_deg: 6.0
+  calibration_diagnostics_interval_s: 0.25
+  joint_limit_warning_margin_deg: 5.0
+  control_orientation: true
+  orientation_scale: 1.0
+  max_orientation_delta_deg: 45.0
+  # WebXR: +X向右、+Y向上、-Z向前。按现场统一世界系
+  # (+X向右、+Y向前、+Z向上) 和镜像底座安装，转换到各 D1 局部基座系。
+  position_axes: [0, 2, 1]
+  position_signs: [1, -1, 1]
+  # 姿态映射必须单独保持右手坐标变换，不能随某一个实测平移符号一起翻转。
+  orientation_axes: [0, 2, 1]
+  orientation_signs: [1, -1, 1]
+  # 左臂局部 +X 朝右/内，右臂局部 +X 朝左/内；右臂绕 Z 镜像 180°。
+  arms:
+    left:
+      position_axes: [0, 2, 1]
+      position_signs: [1, -1, 1]
+    right:
+      position_axes: [0, 2, 1]
+      # 现场单臂测试确认原先前后相反；WebXR -Z（向前）现映射为局部 +Y。
+      position_signs: [-1, -1, 1]
+      # 暂时保留原正规旋转基；待 orientation 单轴测试后再现场标定。
+      orientation_axes: [0, 2, 1]
+      orientation_signs: [-1, 1, 1]
+  # Home 交互模式：A/X 长按对齐并开始，B/Y 暂停。
+  home_align_button_index: 4
+  home_pause_button_index: 5
+  home_align_hold_s: 0.8
+  gripper_open: 65.0
+  gripper_closed: 0.0
+  disable_on_exit: true        # Ctrl+C/异常退出时自动卸力，不自动断电
+  startup_home:
+    file: "robot/calibration/d1_home.yaml"
+    feedback_timeout_s: 5.0
+    max_initial_delta_deg: 35.0
+    joint_speed_deg_s: 5.0
+    gripper_speed_unit_s: 10.0
+    command_hz: 10.0
+    settle_timeout_s: 4.0
+    settle_tolerance_deg: 3.0
 
 camera:
   backend: "dummy"      # "realsense" | "zed" | "dummy"   TODO(现场): NQ2

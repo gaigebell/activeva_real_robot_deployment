@@ -1,73 +1,34 @@
-# cambot 手柄转发补丁（现场实施）
+# cambot Quest 手柄转发（已应用）
 
-目标：Quest 浏览器 WebXR 页面在发送头显位姿的同时，发送**手柄 6DOF 位姿 / 扳机 / 按钮**；
-cambot server 收到后经本地 TCP（默认 127.0.0.1:6001）转发给机器人端控制程序（`robot/control.py` 的 ForwardSubscriber）。
+已对 `/home/ubuntu/cambot` 做了两处增量修改，不改变原有头显控制、
+相机视频或 cambot 安全逻辑：
 
-cambot 的内核逻辑（head_pose 控制环、安全机制、视频推流）**全部不动**，只新增一个消息类型与转发。
+- `cambot/teleop/client/index.html`：在 WebXR 循环中以最高约 120 Hz 发送
+  左/右 `gripSpace` 位姿、食指扳机、侧握键和按键列表。
+- `cambot/teleop/server.py`：将 `controller_pose` / `episode` 经持久 TCP
+  连接转发到 ActiveVA，默认 `127.0.0.1:6001`。ActiveVA 未启动时
+  每秒最多重连一次，不影响 WebXR 服务。
+- `CAMBOT_ACTIVEVA_CONTROLLER_MODE=1` 时，网页不再让 A/X、B/Y、左右侧握键
+  同时触发 cambot 的校准、位置、HUD 或 pause；按键原始状态仍转发给 D1。
+  `scripts/start_quest_stream.sh` 会自动设置该变量。
 
-## 修改点 1：`cambot/cambot/teleop/client/index.html`
+可通过环境变量覆盖转发目标：
 
-在 WebXR rAF 循环中（现有 `sendHeadPose()` 调用处，约 1156 行）追加：
-
-```js
-// 逐手柄发送 gripSpace 位姿与扳机/按钮
-for (const source of session.inputSources) {
-  const pose = xrFrame.getPose(source.gripSpace, xrRefSpace);
-  if (pose) {
-    const p = pose.transform.position, q = pose.transform.orientation;
-    ws.send(JSON.stringify({
-      type: "controller_pose",
-      hand: source.handedness,            // "left" | "right"
-      q: {x: q.x, y: q.y, z: q.z, w: q.w},
-      p: {x: p.x, y: p.y, z: p.z},
-      trigger: source.gamepad?.buttons[0]?.value ?? 0,     // 扳机 0-1
-      squeeze: source.gamepad?.buttons[1]?.value ?? 0,
-      buttons: (source.gamepad?.buttons ?? []).map(b => b.pressed),  // 含 RButtonOne
-      t: performance.now()
-    }));
-  }
-}
-// 开始/结束 episode：RButtonOne 按下沿 -> toggle
-//   （按钮编号以 Quest WebXR xr-standard 映射为准，现场打印核对后确定）
+```bash
+export CAMBOT_FORWARD_HOST=127.0.0.1
+export CAMBOT_FORWARD_PORT=6001
 ```
 
-注意：手柄按钮现有映射（A/X=Home 等）保持不变，新消息与现有按钮逻辑共存。
+## 消息契约
 
-## 修改点 2：`cambot/cambot/teleop/server.py`
-
-`websocket_stream` 的消息分发处（约 388–393 行 `msg_type == "head_pose"` 分支旁）新增：
-
-```python
-elif msg_type in ("controller_pose", "episode"):
-    # 转发给机器人端控制程序（本地 TCP，JSON line）
-    await forward_to_local(data)
+```json
+{"type":"controller_pose","hand":"left","q":{"x":0,"y":0,"z":0,"w":1},"p":{"x":0,"y":0,"z":0},"trigger":0,"squeeze":0,"buttons":[],"t":0}
 ```
 
-模块级新增转发函数（裸 socket，独立线程或 asyncio to_thread 均可）：
+- `hand`: `left` / `right`，分别对应 ActiveVA 左/右 D1。
+- `squeeze`: 侧握键，ActiveVA 的 `deadman` 接合模式用它做指令门控。
+- `buttons[4]` / `buttons[5]`: A/X 对齐与 B/Y 暂停，供 `home` 接合模式使用。
+- `trigger`: 食指扳机，线性映射夹爪（0=开，1=关）。
+- `t`: Quest 页面的 `performance.now()`；ActiveVA 超时判定使用电脑本地收包时间。
 
-```python
-FORWARD_HOST = os.environ.get("CAMBOT_FORWARD_HOST", "127.0.0.1")
-FORWARD_PORT = int(os.environ.get("CAMBOT_FORWARD_PORT", "6001"))
-
-async def forward_to_local(data: dict):
-    import asyncio
-    try:
-        reader, writer = await asyncio.open_connection(FORWARD_HOST, FORWARD_PORT)
-        writer.write((json.dumps(data) + "\n").encode())
-        await writer.drain()
-        writer.close()
-    except OSError:
-        pass    # 控制程序未启动时静默丢弃
-```
-
-（每次消息短连接即可：~120 Hz 手柄消息，本地开销可忽略；如追求更低延迟可改为常驻连接。）
-
-## 消息契约（与 robot/control.py ForwardSubscriber 对齐）
-
-- `{"type": "controller_pose", "hand": "left"|"right", "q": {x,y,z,w}, "p": {x,y,z}, "trigger": 0-1, "squeeze": 0-1, "buttons": [bool...], "t": ms}`
-- `{"type": "episode", "event": "toggle"}` —— RButtonOne 按下沿触发
-
-## 联调验证
-
-1. 启动 `robot/control.py --mode teleop`（或先跑一个打印工具），确认能收到手柄 JSON
-2. Quest 浏览器打开 cambot 页面，动左右手柄，观察控制程序日志
+完整联调步骤见 `docs/quest_d1_teleop.md`。
