@@ -11,17 +11,19 @@ Python 侧只走 TCP JSON line（见 `robot/d1_client.py`），改协议无需�
 ```bash
 cd robot/d1_bridge
 mkdir -p build && cd build
-cmake .. -DD1_SDK_DIR=../../d1_sdk   # 按实际路径
+cmake .. -DD1_SDK_DIR=/home/ubuntu/unitree_ws/d1_sdk   # 按实际路径
 make
 ```
 
 ## 运行
 
 ```bash
-# 左臂（默认 topic；方案一绑网卡）
-./d1_bridge --port 5500 --topic rt/arm_Command --feedback-topic current_servo_angle --address 1
-# 右臂（方案二改 topic 后缀）
-./d1_bridge --port 5501 --topic rt/arm_Command_1 --feedback-topic current_servo_angle_1 --address 1
+# D1_A / left
+./d1_bridge --port 5500 --interface enp5s0 \
+  --topic rt/arm_Command --feedback-topic current_servo_angle --address 1
+# D1_B / right（topic 与 D1_A 相同，由网卡隔离）
+./d1_bridge --port 5501 --interface enx00e04c681b82 \
+  --topic rt/arm_Command --feedback-topic current_servo_angle --address 1
 ```
 
 ## TCP 协议（JSON line）
